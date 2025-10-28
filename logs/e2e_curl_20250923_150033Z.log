@@ -1,0 +1,53 @@
+[2025-09-23T15:00:33Z] No .env file found at /Users/mersad/Desktop/TS/TS-timeline-system/.env — DB/Redis cleanup may not work
+[2025-09-23T15:00:33Z] === Start full curl test ===
+[2025-09-23T15:00:33Z] Registering test users (ignore errors if they already exist)
+[2025-09-23T15:00:33Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-09-23T15:00:33Z]   Header: Content-Type: application/json
+[2025-09-23T15:00:33Z]   Data: {"email":"e2e_user1_20250923150033_3199@example.com","password":"password1"}
+[2025-09-23T15:00:33Z] STATUS: 200
+[2025-09-23T15:00:33Z] BODY:
+[2025-09-23T15:00:33Z] {"message":"user registered"}
+[2025-09-23T15:00:33Z] ---
+[2025-09-23T15:00:33Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-09-23T15:00:33Z]   Header: Content-Type: application/json
+[2025-09-23T15:00:33Z]   Data: {"email":"e2e_user2_20250923150033_3199@example.com","password":"password2"}
+[2025-09-23T15:00:34Z] STATUS: 200
+[2025-09-23T15:00:34Z] BODY:
+[2025-09-23T15:00:34Z] {"message":"user registered"}
+[2025-09-23T15:00:34Z] ---
+[2025-09-23T15:00:34Z] Logging in test users
+[2025-09-23T15:00:34Z] Obtained tokens (masked): eyJhbGciOi..., eyJhbGciOi...
+[2025-09-23T15:00:34Z] Parsed user IDs: user1= user2=
+[2025-09-23T15:00:34Z] User2 () follows User1 ()
+[2025-09-23T15:00:34Z] REQUEST: POST http://127.0.0.1:8085/follow
+[2025-09-23T15:00:34Z]   Header: Content-Type: application/json
+[2025-09-23T15:00:34Z]   Header: Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTg5MDYwMzQsInVzZXJfaWQiOjcwfQ.1D6iVe1hoX1LMhVQWh41dZ8N8jL3lu0E4lQXPYRnm-Y
+[2025-09-23T15:00:34Z]   Data: {"user_id":}
+[2025-09-23T15:00:34Z] STATUS: 400
+[2025-09-23T15:00:34Z] BODY:
+[2025-09-23T15:00:34Z] {"error":"invalid request body"}
+[2025-09-23T15:00:34Z] ---
+[2025-09-23T15:00:34Z] User1 creates a post
+[2025-09-23T15:00:34Z] Created post ID: 67
+[2025-09-23T15:00:34Z] Waiting for fanout to deliver post to user2 timeline
+[2025-09-23T15:00:34Z] Timeline attempt 1: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:35Z] Timeline attempt 2: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:36Z] Timeline attempt 3: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:37Z] Timeline attempt 4: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:38Z] Timeline attempt 5: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:39Z] Timeline attempt 6: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:40Z] Timeline attempt 7: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:41Z] Timeline attempt 8: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:42Z] Timeline attempt 9: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:43Z] Timeline attempt 10: {"posts":[],"next_cursor":0}
+[2025-09-23T15:00:44Z] Timeline does NOT contain the post
+[2025-09-23T15:00:44Z] User2 unfollows User1
+[2025-09-23T15:00:44Z] REQUEST: POST http://127.0.0.1:8085/unfollow
+[2025-09-23T15:00:44Z]   Header: Content-Type: application/json
+[2025-09-23T15:00:44Z]   Header: Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTg5MDYwMzQsInVzZXJfaWQiOjcwfQ.1D6iVe1hoX1LMhVQWh41dZ8N8jL3lu0E4lQXPYRnm-Y
+[2025-09-23T15:00:44Z]   Data: {"user_id":}
+[2025-09-23T15:00:44Z] STATUS: 400
+[2025-09-23T15:00:44Z] BODY:
+[2025-09-23T15:00:44Z] {"error":"invalid request body"}
+[2025-09-23T15:00:44Z] ---
+[2025-09-23T15:00:44Z] === Cleanup: removing test data ===

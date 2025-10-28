@@ -1,0 +1,619 @@
+name: Timeline System CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, staging ]
+    paths:
+      - '**/*.go'
+      - '**/Dockerfile'
+      - 'infrastructure/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.go'
+      - '**/Dockerfile'
+      - 'infrastructure/**'
+  release:
+    types: [ published ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: timeline-system
+  GO_VERSION: '1.21'
+  DOCKER_BUILDKIT: 1
+  KUBERNETES_VERSION: '1.28'
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    outputs:
+      security-passed: ${{ steps.security-check.outputs.passed }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run Gosec Security Scanner
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: '-fmt sarif -out gosec-results.sarif ./...'
+
+    - name: Upload Gosec results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: gosec-results.sarif
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Nancy vulnerability scanner for Go modules
+      run: |
+        go list -json -m all | docker run --rm -i sonatypecommunity/nancy:latest sleuth
+
+    - name: Secret scanning with GitLeaks
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+    - name: Security check summary
+      id: security-check
+      run: |
+        echo "passed=true" >> $GITHUB_OUTPUT
+        echo "Security scans completed successfully"
+
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: |
+        cd TS-timeline-system
+        go mod download
+        go mod verify
+
+    - name: Run go vet
+      run: |
+        cd TS-timeline-system
+        go vet ./...
+
+    - name: Run staticcheck
+      uses: dominikh/staticcheck-action@v1.3.0
+      with:
+        version: "2023.1.6"
+        install-go: false
+        working-directory: TS-timeline-system
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.54
+        working-directory: TS-timeline-system
+        args: --timeout=10m
+
+    - name: Run ineffassign
+      run: |
+        go install github.com/gordonklaus/ineffassign@latest
+        cd TS-timeline-system
+        ineffassign ./...
+
+    - name: Run misspell
+      run: |
+        go install github.com/client9/misspell/cmd/misspell@latest
+        cd TS-timeline-system
+        find . -type f -name "*.go" | xargs misspell -error
+
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        projectBaseDir: TS-timeline-system
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        service: [auth-service, post-service, timeline-service, notification-service, follow-service, fanout-worker]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Start test dependencies
+      run: |
+        docker compose -f TS-timeline-system/docker-compose.test.yml up -d mysql redis rabbitmq
+
+    - name: Wait for dependencies
+      run: |
+        timeout 60 bash -c 'until nc -z localhost 3306; do sleep 1; done'
+        timeout 60 bash -c 'until nc -z localhost 6379; do sleep 1; done'
+        timeout 60 bash -c 'until nc -z localhost 5672; do sleep 1; done'
+
+    - name: Run tests with coverage
+      run: |
+        cd TS-timeline-system/${{ matrix.service }}
+        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        go tool cover -html=coverage.out -o coverage.html
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: TS-timeline-system/${{ matrix.service }}/coverage.out
+        flags: ${{ matrix.service }}
+        name: ${{ matrix.service }}-coverage
+
+    - name: Store coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.service }}-coverage
+        path: TS-timeline-system/${{ matrix.service }}/coverage.html
+
+    - name: Cleanup test dependencies
+      if: always()
+      run: |
+        docker compose -f TS-timeline-system/docker-compose.test.yml down -v
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: timeline_test
+          MYSQL_USER: timeline_user
+          MYSQL_PASSWORD: timeline_pass
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: timeline_user
+          RABBITMQ_DEFAULT_PASS: timeline_pass
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: --health-cmd="rabbitmq-diagnostics -q ping" --health-interval=30s --health-timeout=30s --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run integration tests
+      env:
+        DB_HOST: localhost
+        DB_PORT: 3306
+        DB_NAME: timeline_test
+        DB_USER: timeline_user
+        DB_PASSWORD: timeline_pass
+        REDIS_ADDR: localhost:6379
+        RABBITMQ_HOST: localhost
+        RABBITMQ_PORT: 5672
+        RABBITMQ_USER: timeline_user
+        RABBITMQ_PASS: timeline_pass
+        JWT_SECRET: integration-test-secret
+      run: |
+        cd TS-timeline-system
+        go test -v -tags=integration ./tests/integration/...
+
+    - name: Run API tests with Newman
+      run: |
+        npm install -g newman
+        newman run TS-timeline-system/tests/api/timeline-system-api.postman_collection.json \
+               -e TS-timeline-system/tests/api/test-environment.postman_environment.json \
+               --reporters junit,cli \
+               --reporter-junit-export newman-results.xml
+
+    - name: Upload API test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: newman-results
+        path: newman-results.xml
+
+  build-images:
+    name: Build Container Images
+    runs-on: ubuntu-latest
+    needs: [security-scan, unit-tests]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging'
+    strategy:
+      matrix:
+        service: [auth-service, post-service, timeline-service, notification-service, follow-service, fanout-worker, api-gateway]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: TS-timeline-system/${{ matrix.service }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=${{ github.sha }}
+          BUILD_DATE=${{ steps.meta.outputs.date }}
+
+    - name: Run Trivy vulnerability scanner on image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.meta.outputs.tags }}
+        format: 'sarif'
+        output: 'trivy-image-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-image-results.sarif'
+
+    - name: Sign container image with cosign
+      uses: sigstore/cosign-installer@v3.1.1
+
+    - name: Sign the images with GitHub OIDC Token
+      env:
+        DIGEST: ${{ steps.build.outputs.digest }}
+        TAGS: ${{ steps.meta.outputs.tags }}
+      run: cosign sign --yes "${TAGS}@${DIGEST}"
+
+  deploy-development:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-tests]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: development
+      url: https://dev-api.timeline-system.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: ${{ env.KUBERNETES_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name timeline-system-dev --region us-west-2
+
+    - name: Deploy to development
+      run: |
+        cd TS-timeline-system/infrastructure/kubernetes
+
+        # Apply namespace and RBAC
+        kubectl apply -f namespace.yaml
+        kubectl apply -f rbac.yaml
+
+        # Apply secrets and configmaps
+        kubectl apply -f secrets.yaml
+        kubectl apply -f configmaps.yaml
+
+        # Update image tags
+        export IMAGE_TAG="${{ github.sha }}"
+        envsubst < deployments.yaml | kubectl apply -f -
+        kubectl apply -f services.yaml
+
+        # Wait for deployment
+        kubectl rollout status deployment/auth-service -n ts-timeline-system-dev
+        kubectl rollout status deployment/post-service -n ts-timeline-system-dev
+        kubectl rollout status deployment/timeline-service -n ts-timeline-system-dev
+
+    - name: Run smoke tests
+      run: |
+        cd TS-timeline-system/tests/smoke
+        ./run-smoke-tests.sh https://dev-api.timeline-system.com
+
+    - name: Notify Slack on failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#deployment-alerts'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    if: github.ref == 'refs/heads/staging'
+    environment:
+      name: staging
+      url: https://staging-api.timeline-system.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: ${{ env.KUBERNETES_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name timeline-system-staging --region us-west-2
+
+    - name: Blue-Green Deployment to Staging
+      run: |
+        cd TS-timeline-system/infrastructure/kubernetes
+
+        # Create new deployment with blue-green strategy
+        export IMAGE_TAG="${{ github.sha }}"
+        export DEPLOYMENT_COLOR="green"
+
+        # Deploy green environment
+        envsubst < deployments-blue-green.yaml | kubectl apply -f -
+
+        # Wait for green deployment
+        kubectl rollout status deployment/auth-service-green -n ts-timeline-system-staging
+        kubectl rollout status deployment/post-service-green -n ts-timeline-system-staging
+
+        # Run health checks
+        ./scripts/health-check.sh green
+
+        # Switch traffic to green
+        kubectl patch service auth-service -n ts-timeline-system-staging -p '{"spec":{"selector":{"deployment":"green"}}}'
+        kubectl patch service post-service -n ts-timeline-system-staging -p '{"spec":{"selector":{"deployment":"green"}}}'
+
+        # Cleanup blue deployment after successful switch
+        sleep 60
+        kubectl delete deployment auth-service-blue -n ts-timeline-system-staging --ignore-not-found=true
+        kubectl delete deployment post-service-blue -n ts-timeline-system-staging --ignore-not-found=true
+
+    - name: Run performance tests
+      run: |
+        cd TS-timeline-system/tests/performance
+        ./run-performance-tests.sh https://staging-api.timeline-system.com
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    if: github.event_name == 'release'
+    environment:
+      name: production
+      url: https://api.timeline-system.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: ${{ env.KUBERNETES_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name timeline-system-prod --region us-west-2
+
+    - name: Canary Deployment to Production
+      run: |
+        cd TS-timeline-system/infrastructure/kubernetes
+
+        # Deploy canary (10% traffic)
+        export IMAGE_TAG="${{ github.event.release.tag_name }}"
+        export CANARY_WEIGHT="10"
+
+        envsubst < deployments-canary.yaml | kubectl apply -f -
+        kubectl rollout status deployment/auth-service-canary -n ts-timeline-system
+
+        # Monitor canary for 10 minutes
+        sleep 600
+
+        # Check canary metrics
+        ./scripts/canary-analysis.sh
+
+        # If canary is healthy, promote to 50%
+        export CANARY_WEIGHT="50"
+        envsubst < service-canary.yaml | kubectl apply -f -
+        sleep 300
+
+        # Final promotion to 100%
+        kubectl patch deployment auth-service -n ts-timeline-system --patch '{"spec":{"template":{"spec":{"containers":[{"name":"auth-service","image":"'${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_PREFIX }}-auth-service:${{ github.event.release.tag_name }}'"}]}}}}'
+        kubectl rollout status deployment/auth-service -n ts-timeline-system
+
+        # Cleanup canary
+        kubectl delete deployment auth-service-canary -n ts-timeline-system
+
+    - name: Create deployment record
+      run: |
+        curl -X POST \
+          -H "Authorization: Bearer ${{ secrets.DEPLOYMENT_WEBHOOK_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"version":"${{ github.event.release.tag_name }}","environment":"production","timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","commit":"${{ github.sha }}"}' \
+          ${{ secrets.DEPLOYMENT_WEBHOOK_URL }}
+
+    - name: Notify Slack on success
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        message: 'Production deployment successful! Version: ${{ github.event.release.tag_name }}'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run OWASP ZAP security scan
+      uses: zaproxy/action-full-scan@v0.7.0
+      with:
+        target: 'https://staging-api.timeline-system.com'
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a'
+
+    - name: Upload ZAP scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: zap-report
+        path: report_html.html
+
+    - name: Monitor for new CVEs
+      run: |
+        # Check for new vulnerabilities in dependencies
+        go list -json -m all | docker run --rm -i sonatypecommunity/nancy:latest sleuth --output=json > nancy-results.json
+
+        # Process results and alert on new CVEs
+        if [ -s nancy-results.json ]; then
+          echo "New vulnerabilities detected!"
+          # Send alert to security team
+        fi
+
+  cleanup:
+    name: Cleanup Resources
+    runs-on: ubuntu-latest
+    needs: [deploy-development, deploy-staging, deploy-production]
+    if: always()
+    steps:
+    - name: Cleanup old container images
+      run: |
+        # Keep only the last 10 images for each service
+        for service in auth-service post-service timeline-service notification-service follow-service fanout-worker api-gateway; do
+          gh api -X GET "/orgs/${{ github.repository_owner }}/packages/container/${{ env.IMAGE_PREFIX }}-${service}/versions" \
+            --jq '.[10:] | .[] | .id' | \
+            xargs -I {} gh api -X DELETE "/orgs/${{ github.repository_owner }}/packages/container/${{ env.IMAGE_PREFIX }}-${service}/versions/{}"
+        done
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup old Kubernetes resources
+      if: github.ref == 'refs/heads/develop'
+      run: |
+        # Cleanup old development deployments
+        kubectl get deployments -n ts-timeline-system-dev --sort-by=.metadata.creationTimestamp \
+          -o jsonpath='{.items[:-5].metadata.name}' | \
+          xargs -r kubectl delete deployment -n ts-timeline-system-dev

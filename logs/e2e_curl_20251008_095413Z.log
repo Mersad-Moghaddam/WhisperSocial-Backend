@@ -1,0 +1,47 @@
+[2025-10-08T09:54:13Z] === Start full curl test ===
+[2025-10-08T09:54:13Z] Registering test users (ignore errors if they already exist)
+[2025-10-08T09:54:13Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-10-08T09:54:13Z]   Header: Content-Type: application/json
+[2025-10-08T09:54:13Z]   Data: {"email":"e2e_user1_20251008095413_2246@example.com","password":"password1"}
+[2025-10-08T09:54:13Z] STATUS: 200
+[2025-10-08T09:54:13Z] BODY:
+[2025-10-08T09:54:13Z] {"message":"user registered"}
+[2025-10-08T09:54:13Z] ---
+[2025-10-08T09:54:13Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-10-08T09:54:13Z]   Header: Content-Type: application/json
+[2025-10-08T09:54:13Z]   Data: {"email":"e2e_user2_20251008095413_2246@example.com","password":"password2"}
+[2025-10-08T09:54:13Z] STATUS: 200
+[2025-10-08T09:54:13Z] BODY:
+[2025-10-08T09:54:13Z] {"message":"user registered"}
+[2025-10-08T09:54:13Z] ---
+[2025-10-08T09:54:13Z] Logging in test users
+[2025-10-08T09:54:13Z] Obtained tokens (masked): eyJhbGciOi..., eyJhbGciOi...
+[2025-10-08T09:54:14Z] Parsed user IDs: user1=90 user2=91
+[2025-10-08T09:54:14Z] User2 (91) follows User1 (90)
+[2025-10-08T09:54:14Z] REQUEST: POST http://127.0.0.1:8085/follow
+[2025-10-08T09:54:14Z]   Header: Content-Type: application/json
+[2025-10-08T09:54:14Z]   Header: Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjAxODM2NTMsInVzZXJfaWQiOjkxfQ.263lQPv0cnHRZU-vVvLdGdfS9yTikSYurszu7eXDyys
+[2025-10-08T09:54:14Z]   Data: {"user_id":90}
+[2025-10-08T09:54:14Z] STATUS: 200
+[2025-10-08T09:54:14Z] BODY:
+[2025-10-08T09:54:14Z] {"message":"followed successfully"}
+[2025-10-08T09:54:14Z] ---
+[2025-10-08T09:54:14Z] User1 creates a post
+[2025-10-08T09:54:14Z] Created post ID: 90
+[2025-10-08T09:54:14Z] Waiting for fanout to deliver post to user2 timeline
+[2025-10-08T09:54:14Z] Timeline attempt 1: {"posts":[{"id":90,"author_id":90,"content":"E2E test post"}],"next_cursor":1759917254}
+[2025-10-08T09:54:14Z] Timeline contains the post
+[2025-10-08T09:54:14Z] User2 unfollows User1
+[2025-10-08T09:54:14Z] REQUEST: POST http://127.0.0.1:8085/unfollow
+[2025-10-08T09:54:14Z]   Header: Content-Type: application/json
+[2025-10-08T09:54:14Z]   Header: Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjAxODM2NTMsInVzZXJfaWQiOjkxfQ.263lQPv0cnHRZU-vVvLdGdfS9yTikSYurszu7eXDyys
+[2025-10-08T09:54:14Z]   Data: {"user_id":90}
+[2025-10-08T09:54:14Z] STATUS: 200
+[2025-10-08T09:54:14Z] BODY:
+[2025-10-08T09:54:14Z] {"message":"unfollowed successfully"}
+[2025-10-08T09:54:14Z] ---
+[2025-10-08T09:54:14Z] === Cleanup: removing test data ===
+[2025-10-08T09:54:14Z] Cleaning Redis timelines
+[2025-10-08T09:54:14Z] DEL timeline:91
+[2025-10-08T09:54:14Z] Cleaning MySQL entries (posts, followers, users)
+[2025-10-08T09:54:14Z] DELETE FROM posts WHERE id=90

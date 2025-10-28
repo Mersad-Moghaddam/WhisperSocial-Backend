@@ -1,0 +1,13 @@
+2025/10/08 13:17:25 Database connection established successfully with pool config: maxOpen=25, maxIdle=10, maxLifetime=5m0s
+2025/10/08 13:17:25 Redis connection established successfully: localhost:6379
+
+ ┌───────────────────────────────────────────────────┐ 
+ │                   Fiber v2.52.9                   │ 
+ │               http://127.0.0.1:8082               │ 
+ │       (bound on host 0.0.0.0 and port 8082)       │ 
+ │                                                   │ 
+ │ Handlers ............. 7  Processes ........... 1 │ 
+ │ Prefork ....... Disabled  PID ............. 19427 │ 
+ └───────────────────────────────────────────────────┘ 
+
+signal: killed

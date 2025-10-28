@@ -1,0 +1,13 @@
+go 1.25.1
+
+use (
+	./auth-service
+	./fanout-worker
+	./follow-service
+	./notification-service
+	./post-service
+	./shared
+	./timeline-service
+)
+
+replace github.com/Mersad-Moghaddam/shared v0.0.0 => ./shared

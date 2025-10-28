@@ -1,0 +1,17 @@
+[2025-09-23T14:29:58Z] === Start full curl test ===
+[2025-09-23T14:29:58Z] Registering test users (ignore errors if they already exist)
+[2025-09-23T14:29:58Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-09-23T14:29:58Z]   Header: Content-Type: application/json
+[2025-09-23T14:29:58Z]   Data: {"email":"e2e_user1_20250923142958_1877@example.com","password":"password1"}
+[2025-09-23T14:29:58Z] STATUS: 000
+[2025-09-23T14:29:58Z] BODY:
+[2025-09-23T14:29:58Z] curl: (7) Failed to connect to 127.0.0.1 port 8083 after 0 ms: Couldn't connect to server
+[2025-09-23T14:29:58Z] ---
+[2025-09-23T14:29:58Z] REQUEST: POST http://127.0.0.1:8083/register
+[2025-09-23T14:29:58Z]   Header: Content-Type: application/json
+[2025-09-23T14:29:58Z]   Data: {"email":"e2e_user2_20250923142958_1877@example.com","password":"password2"}
+[2025-09-23T14:29:58Z] STATUS: 000
+[2025-09-23T14:29:58Z] BODY:
+[2025-09-23T14:29:58Z] curl: (7) Failed to connect to 127.0.0.1 port 8083 after 0 ms: Couldn't connect to server
+[2025-09-23T14:29:58Z] ---
+[2025-09-23T14:29:58Z] Logging in test users

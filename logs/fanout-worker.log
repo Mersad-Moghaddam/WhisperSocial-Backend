@@ -1,0 +1,10 @@
+2025/10/08 13:53:36 Database connection established successfully with pool config: maxOpen=25, maxIdle=10, maxLifetime=5m0s
+2025/10/08 13:53:36 Redis connection established successfully: localhost:6379
+2025/10/08 13:53:36 Starting Redis Streams fanout worker...
+2025/10/08 13:53:36 Listening for events on stream: post_created_stream
+2025/10/08 14:25:04 User 4 has no followers, skipping enhanced fanout
+2025/10/08 14:37:05 Stream read error: dial tcp 127.0.0.1:6379: connect: connection refused
+2025/10/08 14:37:09 Redis health check failed: redis ping failed: context deadline exceeded
+2025/10/08 14:37:09 Shutdown signal received...
+2025/10/08 14:37:09 Shutting down fanout worker...
+2025/10/08 14:37:09 Fanout worker has been shut down completely

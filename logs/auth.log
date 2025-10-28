@@ -1,0 +1,2 @@
+2025/10/08 13:49:54 Failed to connect to database: dial tcp: lookup localhost:3306:3306: no such host
+exit status 1
