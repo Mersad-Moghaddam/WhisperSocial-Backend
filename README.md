@@ -426,7 +426,7 @@ Production recommendations:
 - Full OpenAPI split per service with generated client SDKs
 - Unified config package and stricter validation on startup
 
----
+## API docs
 
 If you are onboarding frontend or platform teammates, start with:
 1) `api/openapi.yaml`
