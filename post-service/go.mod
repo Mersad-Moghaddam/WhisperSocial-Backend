@@ -7,6 +7,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.14.0
+	gorm.io/gorm v1.31.0
 )
 
 require (
@@ -31,7 +32,6 @@ require (
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	gorm.io/driver/mysql v1.6.0 // indirect
-	gorm.io/gorm v1.31.0 // indirect
 )
 
 replace github.com/Mersad-Moghaddam/shared => ../shared

@@ -224,3 +224,6 @@ curl -X DELETE http://localhost:8083/notifications/42 \
 ## Postman collection
 
 Import `docs/postman_collection.json` in Postman to get working examples for the endpoints listed above. Replace the `{{baseUrl}}` and `{{token}}` environment variables with your values.
+
+## Admin API
+Use Bearer admin token for /admin/* endpoints. See ../api/openapi.yaml.

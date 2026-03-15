@@ -39,6 +39,8 @@ func (uc *authUsecase) Register(c *fiber.Ctx, req ports.RegisterRequest) error {
 	user := &ports.User{
 		Email:    req.Email,
 		Password: string(hashed),
+		Role:     "user",
+		Status:   "active",
 	}
 	// Attempt to create the user in the repository
 	if err := uc.repo.Create(user); err != nil {
@@ -79,7 +81,12 @@ func (uc *authUsecase) Login(c *fiber.Ctx, req ports.LoginRequest) error {
 			"error": "invalid credential",
 		})
 	}
-	token, err := config.GenerateToken(user.ID)
+	if user.Status == "deactivated" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "account is deactivated",
+		})
+	}
+	token, err := config.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "token creation failed",
