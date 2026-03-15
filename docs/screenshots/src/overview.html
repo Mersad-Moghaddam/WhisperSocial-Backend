@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset='utf-8'><title>Whisper Overview</title>
+<style>
+body{font-family:Inter,Arial,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:32px}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:40px;margin:0 0 8px}p{color:#94a3b8}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+.card{background:#111827;border:1px solid #334155;border-radius:12px;padding:16px}
+.tag{display:inline-block;background:#1d4ed8;color:#dbeafe;padding:4px 8px;border-radius:999px;font-size:12px;margin-bottom:8px}
+.arch{margin-top:24px;background:#111827;border:1px solid #334155;border-radius:12px;padding:20px}
+.row{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.box{border:1px solid #475569;border-radius:10px;padding:10px 14px;background:#0b1220}
+.arrow{color:#60a5fa;font-weight:bold}
+</style></head>
+<body><div class='wrap'>
+<h1>Whisper Backend - System Overview</h1>
+<p>Event-driven microservices: Auth, Post, Follow, Timeline, Fanout Worker, and Admin with MySQL + Redis.</p>
+<div class='grid'>
+<div class='card'><span class='tag'>auth-service :8083</span><div>Register/login and JWT issuance.</div></div>
+<div class='card'><span class='tag'>post-service :8081</span><div>Create posts and publish stream events.</div></div>
+<div class='card'><span class='tag'>follow-service :8085</span><div>Follow graph and feed endpoints.</div></div>
+<div class='card'><span class='tag'>timeline-service :8082</span><div>Timeline reads with Redis + MySQL hydration.</div></div>
+<div class='card'><span class='tag'>fanout-worker</span><div>Consumes post_created_stream and updates timelines.</div></div>
+<div class='card'><span class='tag'>admin-service :8086</span><div>Moderation APIs for users/posts and stats.</div></div>
+</div>
+<div class='arch'>
+<div class='row'>
+<div class='box'>Client</div><div class='arrow'>→</div><div class='box'>Services</div><div class='arrow'>→</div><div class='box'>MySQL</div>
+</div><br/>
+<div class='row'>
+<div class='box'>post-service</div><div class='arrow'>→ post_created_stream →</div><div class='box'>Redis</div><div class='arrow'>→</div><div class='box'>fanout-worker</div>
+</div>
+</div>
+</div></body></html>

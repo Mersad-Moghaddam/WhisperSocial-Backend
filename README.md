@@ -1,547 +1,445 @@
-# Wisper Backend - Microservices Architecture
+# Whisper Backend
 
-A scalable social media backend system built with microservices architecture in Go. Powers the **Wisper** platform with real-time wisper distribution using event-driven design with Redis Streams for asynchronous processing.
+A production-oriented, event-driven Go microservices backend for a social timeline platform.
 
-## 🏗️ Architecture Overview
+Whisper supports:
+- User registration and authentication (JWT)
+- Post creation and asynchronous timeline fanout
+- Follow/unfollow social graph operations
+- Timeline read APIs
+- Admin moderation APIs (users, posts, and basic analytics)
 
-- **Storage**: MySQL via GORM for users, wispers, and follow relations
-- **Cache/Stream**: Redis for sorted-set timelines and Redis Streams for eventing
-- **Transport**: HTTP APIs using Fiber; background worker consumes streams
-- **Design**: Event-driven microservices with clean architecture patterns
+---
 
-## 🔧 Services and Ports
+## Table of Contents
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **auth-service** | 8083 | User registration and JWT-based authentication |
-| **post-service** | 8081 | Create wispers and publish events to Redis Streams |
-| **follow-service** | 8085 | Manage follow/unfollow relationships and social graph |
-| **timeline-service** | 8082 | Read user timelines from Redis and hydrate wispers from MySQL |
-| **fanout-worker** | N/A | Background consumer - processes wisper events and distributes to follower timelines |
+- [System Overview](#system-overview)
+- [Project Screenshots](#project-screenshots)
+- [Architecture](#architecture)
+- [Services](#services)
+- [Data Model](#data-model)
+- [Event Flow](#event-flow)
+- [Repository Structure](#repository-structure)
+- [Local Development](#local-development)
+- [Docker Development](#docker-development)
+- [Configuration](#configuration)
+- [API Overview](#api-overview)
+- [Admin Workflows](#admin-workflows)
+- [Testing](#testing)
+- [Observability & Operations](#observability--operations)
+- [Security Notes](#security-notes)
+- [Roadmap / Suggested Improvements](#roadmap--suggested-improvements)
 
-## 📊 Data Flow
+---
 
-**Complete Wisper Creation → Timeline Distribution Flow:**
+## System Overview
 
-1. **Client creates a wisper** → `POST /posts` to `post-service` with JWT token
-2. **Wisper persisted** → `post-service` saves wisper to MySQL `posts` table
-3. **Event published** → `post-service` emits `post_created` event to Redis Stream `post_created_stream`
-4. **Fanout worker consumes** → `fanout-worker` reads stream in consumer group `fanout_group`
-5. **Follower query** → Worker queries `follow-service` data (or directly queries MySQL `followers` table)
-6. **Timeline distribution** → Worker pushes wisper ID to each follower's Redis ZSET `timeline:{userID}` with score=timestamp
-7. **Client fetches timeline** → `GET /timeline` from `timeline-service` with JWT
-8. **Timeline served** → Service reads post IDs from Redis ZSET, hydrates full wisper data from MySQL
-9. **Response returned** → Client receives paginated list of wispers with metadata
+## Project Screenshots
 
-### Visual Flow Diagram
+### Architecture Overview
+![Whisper backend architecture overview](docs/screenshots/project-overview.svg)
 
-```
-┌─────────┐
-│ Client  │
-└────┬────┘
-     │ POST /posts (JWT)
-     ▼
-┌────────────────┐      ┌───────┐
-│ post-service   │─────▶│ MySQL │ (save wisper)
-│    :8081       │      └───────┘
-└────┬───────────┘
-     │ publish event
-     ▼
-┌────────────────────┐
-│  Redis Stream      │
-│ post_created_stream│
-└────┬───────────────┘
-     │ consume
-     ▼
-┌────────────────┐      ┌──────────────┐
-│ fanout-worker  │─────▶│ MySQL        │
-│  (background)  │      │ (get followers)
-└────┬───────────┘      └──────────────┘
-     │ ZADD timeline:{followerID}
-     ▼
-┌────────────────┐
-│  Redis ZSETs   │
-│ timeline:*     │
-└────┬───────────┘
-     │ read
-     ▼
-┌────────────────┐      ┌───────┐
-│timeline-service│─────▶│ MySQL │ (hydrate wispers)
-│    :8082       │      └───────┘
-└────┬───────────┘
-     │ JSON response
-     ▼
-┌─────────┐
-│ Client  │
-└─────────┘
-```
+### Admin Service Endpoints Snapshot
+![Whisper admin service endpoints](docs/screenshots/admin-endpoints.svg)
 
-## 🌐 Environment Variables
+---
 
-Create a `.env` file in each service directory with the following variables:
+Whisper is designed as a set of independent services sharing MySQL for persistent data and Redis for:
+- stream processing (`post_created_stream`) and
+- timeline cache/indexing (`timeline:{userID}` ZSET keys).
 
-```env
-# Database Configuration
-DB_USER=root
-DB_PASS=yourpassword
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=wisper
+The core write path is event-driven: posts are persisted first, then distributed to followers asynchronously by the fanout worker.
 
-# Redis Configuration
-REDIS_ADDR=localhost:6379
+---
 
-# JWT Secret (must be identical across all services)
-JWT_SECRET=your-secret-key-change-in-production
+## Architecture
 
-# Service Port (specific to each service)
-PORT=8083  # varies by service
+```mermaid
+flowchart LR
+  C[Client / Frontend]
+
+  C --> AUTH[auth-service :8083]
+  C --> POST[post-service :8081]
+  C --> FOLLOW[follow-service :8085]
+  C --> TL[timeline-service :8082]
+  C --> ADMIN[admin-service :8086]
+
+  AUTH --> MYSQL[(MySQL)]
+  POST --> MYSQL
+  FOLLOW --> MYSQL
+  TL --> MYSQL
+  ADMIN --> MYSQL
+  FANOUT[fanout-worker] --> MYSQL
+
+  POST -->|post_created event| REDIS[(Redis)]
+  FANOUT -->|consume + timeline updates| REDIS
+  TL -->|read timeline IDs| REDIS
+  ADMIN -->|moderation cache cleanup| REDIS
 ```
 
-### Port Assignments
-- `auth-service`: `PORT=8083`
-- `post-service`: `PORT=8081`
-- `timeline-service`: `PORT=8082`
-- `follow-service`: `PORT=8085`
-- `fanout-worker`: No PORT (background consumer)
+### Design Principles
 
-## 🚀 Local Development
+- **Microservices by capability**: auth, post, follow, timeline, admin, worker
+- **Layered internal design**: adapters/drivers, usecases, ports
+- **Async fanout**: stream-based decoupling between post writes and timeline distribution
+- **Shared infrastructure package**: DB, Redis, middleware, JWT, security helpers in `shared/`
 
-### Prerequisites
-- **Go** 1.22 or higher
-- **MySQL** 8.0+
-- **Redis** 7.0+
+---
 
-### Setup Instructions
+## Services
 
-#### 1. Start Infrastructure
+### 1) `auth-service` (`:8083`)
 
-**MySQL:**
-```bash
-# macOS
-brew services start mysql@8.0
-mysql -u root -h 127.0.0.1 -P 3306
+Responsibilities:
+- Register new users
+- Authenticate users and issue JWT access tokens
+- Basic user profile updates
 
-# Linux
-sudo systemctl start mysql
+Key behavior:
+- User model includes `role` and `status`
+- Registration defaults: `role=user`, `status=active`
+- Login blocks users with `status=deactivated`
+- JWT includes `user_id`, `email`, `role`, and token metadata
 
-# Create database
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS wisper;"
-```
+---
 
-**Redis:**
-```bash
-# macOS
-brew services start redis
+### 2) `post-service` (`:8081`)
 
-# Linux
-sudo systemctl start redis
+Responsibilities:
+- Create new posts (“wispers”)
+- Persist posts to MySQL
+- Publish `post_created` events to Redis stream for fanout
 
-# Verify
-redis-cli ping  # Should return PONG
-```
+Key behavior:
+- Rejects empty/too-long post bodies
+- Blocks post creation for users with `status=deactivated` or `status=restricted`
+- Posts support soft delete via GORM deleted timestamp
 
-#### 2. Configure Services
+---
 
-Create `.env` files in each service directory:
-```bash
-cd auth-service && cp .env.example .env
-cd ../post-service && cp .env.example .env
-cd ../follow-service && cp .env.example .env
-cd ../timeline-service && cp .env.example .env
-cd ../fanout-worker && cp .env.example .env
-```
+### 3) `follow-service` (`:8085`)
 
-Edit each `.env` file with your database credentials and JWT secret.
+Responsibilities:
+- Follow / unfollow operations
+- Relationship checks and stats
+- Feed query over followed users
 
-#### 3. Run Services
+Key behavior:
+- Feed query excludes soft-deleted posts
+- Feed query only returns posts authored by users in `active` status
 
-**Recommended startup order** (run each in a separate terminal):
+---
 
-```bash
-# Terminal 1: Auth Service
-cd Backend/auth-service
-go run cmd/main.go
+### 4) `timeline-service` (`:8082`)
 
-# Terminal 2: Follow Service
-cd Backend/follow-service
-go run cmd/main.go
+Responsibilities:
+- Return user timeline data
+- Read post IDs from Redis timeline ZSET
+- Hydrate post details from MySQL
 
-# Terminal 3: Post Service
-cd Backend/post-service
-go run cmd/main.go
+Key behavior:
+- Timeline query path excludes soft-deleted posts
+- Timeline query path only returns posts by `active` users
+- Includes per-user request limiting middleware
 
-# Terminal 4: Timeline Service
-cd Backend/timeline-service
-go run cmd/main.go
+---
 
-# Terminal 5: Fanout Worker
-cd Backend/fanout-worker
-go run cmd/main.go
-```
+### 5) `fanout-worker` (background)
 
-GORM will automatically create tables on first startup.
+Responsibilities:
+- Consume `post_created_stream`
+- Resolve followers of post author
+- Push post IDs into each follower timeline sorted set in Redis
 
-## 📡 HTTP APIs (Quick Reference)
+Key behavior:
+- Decouples write latency from follower distribution work
+- Supports graceful shutdown hooks in worker process lifecycle
 
-### Auth Service (`:8083`)
+---
 
-**Register a new user:**
-```http
-POST /register
-Content-Type: application/json
+### 6) `admin-service` (`:8086`)
 
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
+Responsibilities:
+- Admin-only moderation and management APIs
+- User status management
+- Post retrieval/deletion moderation
+- Basic system statistics
 
-**Login:**
-```http
-POST /login
-Content-Type: application/json
+Key behavior:
+- Protected by JWT auth + role middleware (`admin` required)
+- `PATCH /admin/users/{userId}` supports status transitions:
+  - `active`
+  - `deactivated`
+  - `restricted`
+- `DELETE /admin/posts/{postId}` soft-deletes post and removes post ID from relevant Redis timelines
 
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
+---
 
-Response:
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user_id": 1
-}
-```
+## Data Model
 
-### Post Service (`:8081`)
+### `users`
 
-**Create a wisper:**
-```http
-POST /posts
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
+Main fields:
+- `id`
+- `email` (unique)
+- `password` (bcrypt hash)
+- `role` (`user` | `admin`)
+- `status` (`active` | `deactivated` | `restricted`)
+- timestamps
 
-{
-  "content": "Hello Wisper world!"
-}
+### `posts`
 
-Response:
-{
-  "id": 123,
-  "author_id": 1,
-  "content": "Hello Wisper world!",
-  "created_at": "2024-01-15T10:30:00Z"
-}
-```
+Main fields:
+- `id`
+- `author_id`
+- `content`
+- `created_at`
+- `deleted_at` (soft delete)
 
-### Follow Service (`:8085`)
+### `followers`
 
-**Follow a user:**
-```http
-POST /follow
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
+Main fields:
+- `id`
+- `user_id` (followee)
+- `follower_id` (follower)
+- unique composite relation
 
-{
-  "user_id": 42
-}
-```
+---
 
-**Unfollow a user:**
-```http
-POST /unfollow
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
+## Event Flow
 
-{
-  "user_id": 42
-}
-```
+### Post Creation to Timeline Delivery
 
-**Get followers:**
-```http
-GET /followers/:userId
-Authorization: Bearer <JWT_TOKEN>
+1. Client sends `POST /posts` with JWT.
+2. `post-service` validates user status and persists post to MySQL.
+3. `post-service` publishes to Redis stream (`post_created_stream`).
+4. `fanout-worker` consumes event.
+5. Worker loads follower IDs and updates each `timeline:{userID}` ZSET.
+6. `timeline-service` reads IDs + hydrates posts for timeline reads.
 
-Response:
-{
-  "followers": [1, 2, 3, 5, 8]
-}
-```
+### Moderation Flow (Admin)
 
-**Get following:**
-```http
-GET /following/:userId
-Authorization: Bearer <JWT_TOKEN>
+1. Admin sends `DELETE /admin/posts/{postId}`.
+2. Post is soft-deleted in MySQL.
+3. Service removes post ID from follower timeline ZSET keys and author timeline key.
+4. Read APIs also defensively filter deleted/ineligible content.
 
-Response:
-{
-  "following": [42, 43, 44]
-}
-```
+---
 
-**Check if following:**
-```http
-GET /is-following/:userId
-Authorization: Bearer <JWT_TOKEN>
+## Repository Structure
 
-Response:
-{
-  "is_following": true
-}
-```
-
-**Get follow statistics:**
-```http
-GET /stats/:userId
-Authorization: Bearer <JWT_TOKEN>
-
-Response:
-{
-  "followers_count": 150,
-  "following_count": 89
-}
-```
-
-### Timeline Service (`:8082`)
-
-**Get authenticated user's timeline:**
-```http
-GET /timeline?cursor=0&limit=20
-Authorization: Bearer <JWT_TOKEN>
-
-Response:
-{
-  "posts": [
-    {
-      "id": 456,
-      "author_id": 42,
-      "content": "Great day for coding!",
-      "created_at": "2024-01-15T11:00:00Z"
-    },
-    ...
-  ],
-  "next_cursor": 1642246800
-}
-```
-
-**Query Parameters:**
-- `cursor` (optional): Unix timestamp for pagination (0 for first page)
-- `limit` (optional): Number of wispers to return (default: 20)
-
-## 🗄️ Redis Keys and Streams
-
-### Redis Streams
-- **Stream Name**: `post_created_stream`
-- **Publisher**: `post-service`
-- **Consumer Group**: `fanout_group`
-- **Consumer**: `fanout-worker`
-
-**Stream Entry Format:**
-```json
-{
-  "post_id": "123",
-  "author_id": "1",
-  "created_at": "1642246800"
-}
-```
-
-### Redis Keys
-
-**Timeline ZSETs:**
-- **Key Pattern**: `timeline:{userID}`
-- **Members**: Post IDs
-- **Scores**: Unix timestamp (for chronological ordering)
-
-Example:
-```bash
-redis-cli ZREVRANGE timeline:42 0 9 WITHSCORES
-```
-
-### Follow Relationships
-Stored in MySQL `followers` table:
-```sql
-CREATE TABLE followers (
-  follower_id INT NOT NULL,
-  followee_id INT NOT NULL,
-  created_at TIMESTAMP,
-  PRIMARY KEY (follower_id, followee_id)
-);
-```
-
-## 🧰 Go Workspace
-
-This repository uses a **Go workspace** (`go.work`) to manage local module dependencies:
-
-```
-Backend/
-├── go.work          # Workspace definition
+```text
+.
+├── admin-service/
 ├── auth-service/
 ├── post-service/
 ├── follow-service/
 ├── timeline-service/
 ├── fanout-worker/
-└── shared/          # Shared utilities and models
+├── notification-service/        # present in repository; currently not part of core compose stack
+├── shared/                      # common config/middleware utilities
+├── api/                         # OpenAPI specification
+├── docs/                        # integration/frontend docs
+├── scripts/                     # smoke/demo/load scripts
+├── docker-compose.yml
+├── go.work
+└── RUNBOOK.md
 ```
-
-All services can import from `shared` without publishing to a remote module registry.
-
-## 🧪 Testing the Complete Flow
-
-### End-to-End Test Scenario
-
-**1. Create two users:**
-```bash
-# User A
-curl -X POST http://127.0.0.1:8083/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"alice@wisper.com","password":"alice123"}'
-
-# User B
-curl -X POST http://127.0.0.1:8083/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"bob@wisper.com","password":"bob123"}'
-```
-
-**2. Login and get tokens:**
-```bash
-# Alice's token
-TOKEN_A=$(curl -s -X POST http://127.0.0.1:8083/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"alice@wisper.com","password":"alice123"}' \
-  | jq -r .token)
-
-# Bob's token
-TOKEN_B=$(curl -s -X POST http://127.0.0.1:8083/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"bob@wisper.com","password":"bob123"}' \
-  | jq -r .token)
-```
-
-**3. Bob follows Alice:**
-```bash
-curl -X POST http://127.0.0.1:8085/follow \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN_B" \
-  -d '{"user_id": 1}'  # Alice's user_id
-```
-
-**4. Alice creates a wisper:**
-```bash
-curl -X POST http://127.0.0.1:8081/posts \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN_A" \
-  -d '{"content":"Hello from Alice! This is my first wisper."}'
-```
-
-**5. Bob checks his timeline (should see Alice's wisper):**
-```bash
-curl -H "Authorization: Bearer $TOKEN_B" \
-  "http://127.0.0.1:8082/timeline?limit=20&cursor=0"
-```
-
-**6. Verify Redis:**
-```bash
-# Check stream
-redis-cli XINFO STREAM post_created_stream
-
-# Check Bob's timeline
-redis-cli ZREVRANGE timeline:2 0 -1 WITHSCORES
-```
-
-## ✨ Key Features
-
-### Microservices Architecture
-- **Single Responsibility**: Each service handles one domain
-- **Independent Deployment**: Services can be deployed separately
-- **Language Agnostic**: Easy to add services in other languages
-- **Fault Isolation**: One service failure doesn't crash the system
-
-### Event-Driven Design
-- **Async Processing**: Post creation doesn't block on fanout
-- **Scalability**: Multiple workers can consume the same stream
-- **Reliability**: Redis Streams provide durability and replay
-- **Decoupling**: Services communicate via events, not direct calls
-
-### Real-time Fanout
-- **Instant Distribution**: Wispers appear immediately on follower timelines
-- **Push Model**: Pre-computed timelines (write fanout, not read fanout)
-- **Scalable**: Works efficiently even with thousands of followers
-- **Sorted by Time**: Redis ZSETs maintain chronological order
-
-### Distributed Caching
-- **High Performance**: Timeline reads are pure Redis (microsecond latency)
-- **Reduced DB Load**: MySQL only hit for wisper hydration
-- **Horizontal Scaling**: Redis cluster for massive scale
-- **Cache Invalidation**: Simple append-only model
-
-### JWT Authentication
-- **Stateless**: No session storage needed
-- **Distributed**: Token valid across all services
-- **Secure**: HMAC-SHA256 signing
-- **Expirable**: Tokens have configurable TTL
-
-### Social Graph Management
-- **Bidirectional Queries**: Get followers AND following
-- **Fast Lookups**: Indexed queries on MySQL
-- **Follow Statistics**: Real-time counts
-- **Relationship Checks**: Quick "is following" validation
-
-### Clean Architecture
-- **Hexagonal Pattern**: Ports and adapters design
-- **Testable**: Business logic separated from infrastructure
-- **Maintainable**: Clear separation of concerns
-- **Extensible**: Easy to swap implementations
-
-### Independent Scaling
-- **Service-Level Scaling**: Scale bottleneck services independently
-- **Horizontal Scaling**: Add more instances of any service
-- **Worker Scaling**: Add more fanout workers as load increases
-- **Database Scaling**: MySQL read replicas, Redis cluster
-
-## 📚 Additional Documentation
-
-- **[RUNBOOK.md](RUNBOOK.md)** - Operations, troubleshooting, and day-2 tasks
-- **[SCALABILITY_PLAN.md](SCALABILITY_PLAN.md)** - How to scale to millions of users
-- **[frontend-api.md](docs/frontend-api.md)** - Complete API reference for frontend
-- **Service READMEs**: Each service has detailed documentation in its directory
-
-## 🐛 Common Issues
-
-See [RUNBOOK.md](RUNBOOK.md) for detailed troubleshooting, but here are quick fixes:
-
-**Services won't start:**
-- Check MySQL and Redis are running
-- Verify `.env` files exist and are correct
-- Ensure ports are not already in use
-
-**Timeline not updating:**
-- Verify fanout-worker is running and consuming stream
-- Check Redis stream: `redis-cli XINFO STREAM post_created_stream`
-- Verify consumer group exists: `redis-cli XINFO GROUPS post_created_stream`
-
-**Authentication fails:**
-- Ensure `JWT_SECRET` is identical across all services
-- Check token expiration
-- Verify `Authorization: Bearer <token>` header format
-
-## 🚀 Production Deployment
-
-For production deployment:
-1. Use environment variables for all configuration
-2. Enable TLS for all HTTP endpoints
-3. Set up proper logging and monitoring
-4. Configure Redis persistence (AOF + RDB)
-5. Set up MySQL replication for high availability
-6. Use a proper secret management system for JWT_SECRET
-7. Add rate limiting to prevent abuse
-8. Configure proper CORS headers
-9. Set up health checks for load balancers
-10. Monitor Redis Stream lag and worker performance
-
-See `SCALABILITY_PLAN.md` for architecture at scale.
 
 ---
 
-**Built with ❤️ for Wisper** 🌤️
+## Local Development
+
+### Prerequisites
+
+- Go (workspace version compatible with modules)
+- MySQL 8+
+- Redis 7+
+- GNU Make (optional)
+
+### 1) Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with local values (`DB_*`, `REDIS_*`, `JWT_SECRET`, etc.).
+
+### 2) Start infrastructure
+
+Use local MySQL + Redis (or Docker for just infra).
+
+### 3) Run services (separate terminals)
+
+```bash
+cd auth-service && go run cmd/main.go
+cd post-service && go run cmd/main.go
+cd follow-service && go run cmd/main.go
+cd timeline-service && go run cmd/main.go
+cd fanout-worker && go run cmd/main.go
+cd admin-service && go run cmd/main.go
+```
+
+### 4) Verify health
+
+```bash
+curl -i http://localhost:8083/health
+curl -i http://localhost:8081/health
+curl -i http://localhost:8085/health
+curl -i http://localhost:8082/health
+curl -i http://localhost:8086/health
+```
+
+---
+
+## Docker Development
+
+### Full stack
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Services started:
+- mysql (`3306`)
+- redis (`6379`)
+- auth (`8083`)
+- post (`8081`)
+- follow (`8085`)
+- timeline (`8082`)
+- admin (`8086`)
+- fanout-worker (background)
+
+To stop:
+
+```bash
+docker compose down
+```
+
+To reset DB volume:
+
+```bash
+docker compose down -v
+```
+
+---
+
+## Configuration
+
+Core environment variables (see `.env.example`):
+
+- `APP_PORT`
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- `REDIS_HOST`, `REDIS_PORT`
+- `JWT_SECRET`
+- `RABBITMQ_HOST`, `RABBITMQ_PORT` (reserved / non-core in current compose)
+
+> Notes:
+> - Service-level `.env` files may override shared root values.
+> - Ensure all services share the same `JWT_SECRET`.
+
+---
+
+## API Overview
+
+Detailed API specification is available at:
+- `api/openapi.yaml`
+
+### Core endpoints (high level)
+
+- Auth: `/register`, `/login`, `/update`
+- Posts: `/posts`
+- Follow: `/follow`, `/unfollow`, `/followers/:userId`, `/following/:userId`, `/is-following/:userId`, `/stats/:userId`, `/feed`
+- Timeline: `/timeline`
+- Admin: `/admin/users`, `/admin/posts`, `/admin/stats`, etc.
+
+---
+
+## Admin Workflows
+
+### Grant admin role
+
+```sql
+UPDATE users SET role='admin' WHERE email='admin@example.com';
+```
+
+### Deactivate user
+
+- Endpoint: `PATCH /admin/users/{userId}` body `{"status":"deactivated"}`
+- Effect:
+  - user cannot log in
+  - user posts are filtered out from timeline/feed query paths
+
+### Restrict user
+
+- Endpoint: `PATCH /admin/users/{userId}` body `{"status":"restricted"}`
+- Effect:
+  - user can authenticate
+  - user cannot create new posts
+
+### Delete post
+
+- Endpoint: `DELETE /admin/posts/{postId}`
+- Effect:
+  - post soft-deleted
+  - timeline cache entries removed from Redis
+
+---
+
+## Testing
+
+Run tests per service:
+
+```bash
+cd shared && go test ./...
+cd auth-service && go test ./...
+cd post-service && go test ./...
+cd follow-service && go test ./...
+cd timeline-service && go test ./...
+cd fanout-worker && go test ./...
+cd admin-service && go test ./...
+```
+
+Smoke scripts are available under `scripts/` for end-to-end checks.
+
+---
+
+## Observability & Operations
+
+- Operational procedures: see `RUNBOOK.md`
+- Health endpoints available on HTTP services (`/health`)
+- Logs are emitted per service; centralize via your preferred platform in production
+
+Production recommendations:
+- structured centralized logging
+- metrics export (Prometheus/OpenTelemetry)
+- distributed tracing across service boundaries
+- dashboards and SLO/SLA tracking
+
+---
+
+## Security Notes
+
+- JWT auth required for protected endpoints
+- Admin APIs require `role=admin`
+- Use strong `JWT_SECRET` and rotate periodically
+- Prefer TLS termination at ingress/reverse proxy
+- Apply network policies and least-privilege DB credentials
+
+---
+
+## Roadmap / Suggested Improvements
+
+- Dedicated migration tooling (instead of only auto-migrate patterns)
+- Better cross-service contracts (versioned events, schema validation)
+- Stronger integration test suite and test containers
+- Full OpenAPI split per service with generated client SDKs
+- Unified config package and stricter validation on startup
+
+---
+
+If you are onboarding frontend or platform teammates, start with:
+1) `api/openapi.yaml`
+2) `RUNBOOK.md`
+3) service folders for route/usecase implementations.

@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: Whisper Backend APIs
+  version: 1.1.0
+servers:
+  - url: http://localhost
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /register:
+    post:
+      summary: Register user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [email,password], properties: {email: {type: string}, password: {type: string}}}
+      responses: {'200': {description: OK}}
+  /login:
+    post:
+      summary: Login user
+      responses: {'200': {description: JWT token}}
+  /posts:
+    post:
+      security: [{bearerAuth: []}]
+      summary: Create post
+      responses: {'200': {description: Created}}
+  /timeline:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Read timeline
+      responses: {'200': {description: Timeline posts}}
+  /follow:
+    post:
+      security: [{bearerAuth: []}]
+      summary: Follow user
+      responses: {'200': {description: Followed}}
+  /admin/users:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Admin list users (admin role required)
+      parameters:
+        - {in: query, name: status, schema: {type: string, enum: [active,deactivated,restricted]}}
+      responses: {'200': {description: Users}}
+  /admin/users/{userId}:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Admin get user (admin role required)
+      parameters: [{in: path, name: userId, required: true, schema: {type: integer}}]
+      responses: {'200': {description: User}}
+    patch:
+      security: [{bearerAuth: []}]
+      summary: Admin update status (admin role required)
+      responses: {'200': {description: Updated}}
+  /admin/posts:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Admin list posts (admin role required)
+      responses: {'200': {description: Posts}}
+  /admin/posts/{postId}:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Admin get post (admin role required)
+      parameters: [{in: path, name: postId, required: true, schema: {type: integer}}]
+      responses: {'200': {description: Post}}
+    delete:
+      security: [{bearerAuth: []}]
+      summary: Admin delete post (admin role required)
+      responses: {'204': {description: Deleted}}
+  /admin/stats:
+    get:
+      security: [{bearerAuth: []}]
+      summary: Admin stats (admin role required)
+      responses: {'200': {description: Aggregate stats}}

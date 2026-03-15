@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860">
+  <rect width="1400" height="860" fill="#0b1220"/>
+  <text x="50" y="70" fill="#e2e8f0" font-size="44" font-family="Arial">Whisper Backend - Architecture Overview</text>
+  <text x="50" y="108" fill="#93c5fd" font-size="22" font-family="Arial">Event-driven microservices with MySQL + Redis Streams</text>
+
+  <g font-family="Arial" font-size="20" fill="#e2e8f0">
+    <rect x="50" y="160" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="70" y="205">auth-service :8083</text><text x="70" y="235" fill="#94a3b8">Register/login + JWT</text>
+
+    <rect x="500" y="160" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="520" y="205">post-service :8081</text><text x="520" y="235" fill="#94a3b8">Create post + publish event</text>
+
+    <rect x="950" y="160" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="970" y="205">follow-service :8085</text><text x="970" y="235" fill="#94a3b8">Follow graph + feed</text>
+
+    <rect x="50" y="300" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="70" y="345">timeline-service :8082</text><text x="70" y="375" fill="#94a3b8">Timeline reads</text>
+
+    <rect x="500" y="300" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="520" y="345">fanout-worker</text><text x="520" y="375" fill="#94a3b8">Consume stream + fanout</text>
+
+    <rect x="950" y="300" width="400" height="110" rx="12" fill="#111827" stroke="#334155"/>
+    <text x="970" y="345">admin-service :8086</text><text x="970" y="375" fill="#94a3b8">Moderation APIs</text>
+  </g>
+
+  <g font-family="Arial" font-size="24" fill="#e0f2fe">
+    <rect x="70" y="520" width="180" height="70" rx="10" fill="#0f172a" stroke="#38bdf8"/>
+    <text x="110" y="564">Client</text>
+    <text x="270" y="565" fill="#60a5fa">→</text>
+
+    <rect x="320" y="520" width="260" height="70" rx="10" fill="#0f172a" stroke="#38bdf8"/>
+    <text x="355" y="564">post-service</text>
+    <text x="600" y="565" fill="#60a5fa">→ post_created_stream →</text>
+
+    <rect x="860" y="520" width="180" height="70" rx="10" fill="#0f172a" stroke="#38bdf8"/>
+    <text x="917" y="564">Redis</text>
+    <text x="1060" y="565" fill="#60a5fa">→</text>
+
+    <rect x="1120" y="520" width="230" height="70" rx="10" fill="#0f172a" stroke="#38bdf8"/>
+    <text x="1147" y="564">fanout-worker</text>
+  </g>
+
+  <text x="50" y="760" fill="#94a3b8" font-size="20" font-family="Arial">Tip: Admin deletes remove post IDs from timeline Redis ZSETs and soft-delete in MySQL.</text>
+</svg>
