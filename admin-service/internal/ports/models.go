@@ -8,10 +8,11 @@ import (
 
 type User struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	Email     string    `json:"email" gorm:"type:varchar(100);unique;not null"`
+	Password  string    `json:"-" gorm:"type:varchar(100);not null"`
+	Role      string    `json:"role" gorm:"type:varchar(20);not null;default:user"`
+	Status    string    `json:"status" gorm:"type:varchar(20);not null;default:active"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 type Post struct {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Mersad-Moghaddam/admin-service/internal/adapters/database"
 	http "github.com/Mersad-Moghaddam/admin-service/internal/drivers/http"
-	"github.com/Mersad-Moghaddam/admin-service/internal/ports"
 	"github.com/Mersad-Moghaddam/admin-service/internal/usecases"
 	"github.com/Mersad-Moghaddam/shared/config"
 	"github.com/Mersad-Moghaddam/shared/middleware"
@@ -21,7 +20,9 @@ func main() {
 	_ = godotenv.Load(envPath)
 	_ = godotenv.Load(".env")
 
-	config.InitDB(&ports.User{})
+	// Admin service should not auto-migrate shared tables.
+	// Other owning services (auth/post/follow) are responsible for schema evolution.
+	config.InitDB(nil)
 	config.InitRedis()
 
 	repo := database.NewAdminRepository()

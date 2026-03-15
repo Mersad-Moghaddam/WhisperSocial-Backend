@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset='utf-8'><title>Admin API</title>
+<style>
+body{font-family:Inter,Arial,sans-serif;background:#020617;color:#e2e8f0;margin:0;padding:32px}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:38px;margin:0 0 10px}.sub{color:#94a3b8;margin-bottom:20px}
+.panel{background:#111827;border:1px solid #334155;border-radius:12px;padding:20px}
+ul{line-height:1.9}
+code{background:#0b1220;border:1px solid #334155;padding:2px 6px;border-radius:6px;color:#93c5fd}
+</style></head>
+<body><div class='wrap'>
+<h1>Admin Service - Moderation Endpoints</h1>
+<div class='sub'>All endpoints require Bearer token with <code>role=admin</code>.</div>
+<div class='panel'>
+<ul>
+<li><code>GET /admin/users</code> - list users with status/date filters</li>
+<li><code>GET /admin/users/{userId}</code> - user details</li>
+<li><code>PATCH /admin/users/{userId}</code> - set <code>active|deactivated|restricted</code></li>
+<li><code>GET /admin/posts</code> - list posts with pagination filters</li>
+<li><code>GET /admin/posts/{postId}</code> - post + author details</li>
+<li><code>DELETE /admin/posts/{postId}</code> - soft delete + Redis timeline cleanup</li>
+<li><code>GET /admin/stats</code> - aggregate totals</li>
+</ul>
+</div>
+</div></body></html>

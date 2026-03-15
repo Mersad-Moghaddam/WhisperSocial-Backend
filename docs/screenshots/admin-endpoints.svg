@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <rect width="1400" height="900" fill="#020617"/>
+  <text x="50" y="70" fill="#e2e8f0" font-size="44" font-family="Arial">Whisper Admin Service - Endpoints</text>
+  <text x="50" y="108" fill="#7dd3fc" font-size="22" font-family="Arial">All routes require Bearer token with role=admin</text>
+
+  <g font-family="Courier New" font-size="25" fill="#e2e8f0">
+    <rect x="50" y="160" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="210">GET    /admin/users                list users (status/date filters)</text>
+
+    <rect x="50" y="255" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="305">GET    /admin/users/{userId}       get user details</text>
+
+    <rect x="50" y="350" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="400">PATCH  /admin/users/{userId}       set active|deactivated|restricted</text>
+
+    <rect x="50" y="445" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="495">GET    /admin/posts                list posts (pagination + filters)</text>
+
+    <rect x="50" y="540" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="590">GET    /admin/posts/{postId}       get post + author details</text>
+
+    <rect x="50" y="635" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="685">DELETE /admin/posts/{postId}       soft-delete + Redis timeline cleanup</text>
+
+    <rect x="50" y="730" width="1300" height="80" rx="10" fill="#111827" stroke="#334155"/>
+    <text x="80" y="780">GET    /admin/stats                aggregate counters</text>
+  </g>
+</svg>

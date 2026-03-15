@@ -14,6 +14,7 @@ Whisper supports:
 ## Table of Contents
 
 - [System Overview](#system-overview)
+- [Project Screenshots](#project-screenshots)
 - [Architecture](#architecture)
 - [Services](#services)
 - [Data Model](#data-model)
@@ -32,6 +33,16 @@ Whisper supports:
 ---
 
 ## System Overview
+
+## Project Screenshots
+
+### Architecture Overview
+![Whisper backend architecture overview](docs/screenshots/project-overview.svg)
+
+### Admin Service Endpoints Snapshot
+![Whisper admin service endpoints](docs/screenshots/admin-endpoints.svg)
+
+---
 
 Whisper is designed as a set of independent services sharing MySQL for persistent data and Redis for:
 - stream processing (`post_created_stream`) and
@@ -426,7 +437,7 @@ Production recommendations:
 - Full OpenAPI split per service with generated client SDKs
 - Unified config package and stricter validation on startup
 
-## API docs
+---
 
 If you are onboarding frontend or platform teammates, start with:
 1) `api/openapi.yaml`
