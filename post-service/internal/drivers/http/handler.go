@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Mersad-Moghaddam/post-service/internal/ports"
+	"github.com/Mersad-Moghaddam/post-service/internal/usecases"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -37,6 +38,9 @@ func handleCreatePost(uc ports.CreatePostUsecase) fiber.Handler {
 
 		post, err := uc.Create(req)
 		if err != nil {
+			if err == usecases.ErrUserCannotPost {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
+			}
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 

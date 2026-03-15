@@ -64,7 +64,7 @@ func timelineHandler(uc ports.GetTimelineUsecase) fiber.Handler {
 		}
 
 		// Build query
-		if err := config.DB.Table("posts").Select("id, author_id, content").Where("author_id IN ?", following).Order("created_at DESC").Limit(limit).Find(&posts).Error; err != nil {
+		if err := config.DB.Table("posts").Select("posts.id, posts.author_id, posts.content").Joins("JOIN users ON users.id = posts.author_id").Where("posts.author_id IN ?", following).Where("users.status = ?", "active").Where("posts.deleted_at IS NULL").Order("posts.created_at DESC").Limit(limit).Find(&posts).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
